@@ -1,0 +1,29 @@
+{
+  "name": "isochrone-tools",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@turf/helpers": "^7.2.0",
+    "@turf/intersect": "^7.2.0",
+    "@turf/simplify": "^7.2.0",
+    "@turf/union": "^7.2.0",
+    "maplibre-gl": "^5.24.0",
+    "next": "^16.2.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.9.0"
+  }
+}
