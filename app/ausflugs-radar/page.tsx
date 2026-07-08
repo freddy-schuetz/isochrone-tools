@@ -49,6 +49,7 @@ export default function AusflugsRadar() {
   const [token, setToken] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [activeCats, setActiveCats] = useState<string[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const { status, result, errorMessage } = usePolling<RadarResult>(token);
 
   async function submit(e: React.FormEvent) {
@@ -88,16 +89,29 @@ export default function AusflugsRadar() {
     return result.pois.filter((p) => activeCats.includes(p.cat));
   }, [result, activeCats]);
 
+  const origin = result?.center ?? null;
   const poisFc = useMemo<FeatureCollection>(
     () => ({
       type: "FeatureCollection",
       features: shownPois.map((p) => ({
         type: "Feature",
-        properties: { cat: p.cat, name: p.name, sub: p.travel_minutes != null ? `${p.travel_minutes} Min` : "" },
+        properties: {
+          id: p.id,
+          cat: p.cat,
+          name: p.name,
+          emoji: CAT_META[p.cat]?.emoji ?? "📍",
+          category_label: CAT_META[p.cat]?.label ?? p.cat,
+          desc: p.description ?? "",
+          img: p.image ?? "",
+          website: p.website ?? "",
+          meta_right: p.travel_minutes != null ? `${p.travel_minutes} Min` : p.distance_km != null ? `${p.distance_km} km` : "",
+          gmaps: `https://www.google.com/maps/dir/?api=1${origin ? `&origin=${origin.lat},${origin.lng}` : ""}&destination=${p.lat},${p.lng}`,
+          komoot: `https://www.komoot.de/plan/@${p.lat},${p.lng},14z`,
+        },
         geometry: { type: "Point", coordinates: [p.lng, p.lat] },
       })),
     }),
-    [shownPois]
+    [shownPois, origin]
   );
 
   const poiColors = Object.fromEntries(Object.entries(CAT_META).map(([k, v]) => [k, v.color]));
@@ -225,12 +239,15 @@ export default function AusflugsRadar() {
             poiColors={poiColors}
             markers={[{ lat: result.center.lat, lng: result.center.lng }]}
             heightClass="h-[460px]"
+            onSelect={setSelectedId}
+            selectedId={selectedId}
           />
+          <p className="-mt-3 text-center text-xs text-slate-400">💡 Tipp: Punkt auf der Karte anklicken für Foto, Infos &amp; Links.</p>
 
           {richPois.length > 0 ? (
             <div className="grid gap-3 lg:grid-cols-2">
               {richPois.map((p) => (
-                <PoiCard key={p.id} poi={p} origin={result.center} />
+                <PoiCard key={p.id} poi={p} origin={result.center} highlighted={selectedId === p.id} />
               ))}
             </div>
           ) : (

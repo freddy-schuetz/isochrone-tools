@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RichPoi } from "@/lib/types";
 
 function gmapsDir(p: RichPoi, origin?: { lat: number; lng: number }) {
@@ -15,24 +15,37 @@ function komoot(p: RichPoi) {
 
 const WHEELCHAIR_LABEL: Record<string, string> = { yes: "barrierefrei", limited: "teils barrierefrei", no: "nicht barrierefrei" };
 
-// Reiche Ergebnis-Karte: Foto (frei), Beschreibung (Wiki), nützliche OSM-Chips, Deep-Links.
-// Fehlende Felder werden sauber weggelassen.
+// Reiche Ergebnis-Karte: Foto (frei), Beschreibung (Wiki), KI-Einordnung, nützliche OSM-Chips,
+// Route auf der Karte + Deep-Links. Fehlende Felder werden sauber weggelassen.
 export default function PoiCard({
   poi,
   origin,
   onRoute,
   routeActive,
+  highlighted,
 }: {
   poi: RichPoi;
   origin?: { lat: number; lng: number };
   onRoute?: (poi: RichPoi) => void;
   routeActive?: boolean;
+  highlighted?: boolean;
 }) {
   const [imgOk, setImgOk] = useState(true);
   const showImg = poi.image && imgOk;
+  const ref = useRef<HTMLElement>(null);
+
+  // Bei Auswahl auf der Karte: sanft hierher scrollen.
+  useEffect(() => {
+    if (highlighted) ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlighted]);
 
   return (
-    <article className="flex gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+    <article
+      ref={ref}
+      className={`flex gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 transition ${
+        highlighted ? "ring-2 ring-brand-accent" : "ring-slate-200"
+      }`}
+    >
       {showImg && (
         <a href={poi.wiki_url ?? poi.image!} target="_blank" rel="noopener noreferrer" className="shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -95,6 +108,7 @@ export default function PoiCard({
             <span className="rounded-full bg-slate-50 px-2 py-0.5 text-slate-600">♿ {WHEELCHAIR_LABEL[poi.wheelchair]}</span>
           )}
         </div>
+        {poi.opening_hours && <p className="mt-1 text-xs text-slate-500">🕑 {poi.opening_hours}</p>}
 
         {/* Aktionen */}
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">

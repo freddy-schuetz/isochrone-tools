@@ -217,6 +217,11 @@ export default function LageCheck() {
                     />
                   </div>
                   <p className="mt-1 text-xs text-slate-500">{c.reason}</p>
+                  {c.places && c.places.length > 0 && (
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      z. B. {c.places.map((pl) => pl.name).join(" · ")}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>

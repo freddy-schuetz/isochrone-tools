@@ -33,6 +33,7 @@ export type CategoryScore = {
   max: number;
   counts: { [band: string]: number }; // "5" | "10" | "15" → Anzahl POIs
   reason: string;
+  places?: { name: string; band: number }[]; // konkrete Ortsnamen für die Detail-Ansicht
 };
 
 export type LageCheckResult = {
