@@ -4,9 +4,11 @@ import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
 import ModeTimePicker from "@/components/ModeTimePicker";
-import PoiList from "@/components/PoiList";
+import PoiCard from "@/components/PoiCard";
+import MethodBox, { type MethodContent } from "@/components/MethodBox";
+import AboutSection from "@/components/AboutSection";
 import { usePolling } from "@/lib/usePolling";
-import type { Feature, FeatureCollection, GeocodeHit, RadarMode, RadarResult } from "@/lib/types";
+import type { Feature, FeatureCollection, GeocodeHit, RadarMode, RadarResult, RichPoi } from "@/lib/types";
 
 const CAT_META: Record<string, { label: string; color: string; emoji: string }> = {
   kultur: { label: "Kultur", color: "#9333ea", emoji: "🏛️" },
@@ -18,6 +20,26 @@ const MODE_LABEL: Record<RadarMode, string> = {
   "foot-walking": "zu Fuß",
   "cycling-regular": "mit dem Rad",
   "driving-car": "mit dem Auto",
+};
+
+const METHOD: MethodContent = {
+  intro:
+    "Der Radar zeigt, welche Ausflugsziele du von deinem Standort in deinem Zeitbudget wirklich erreichst — mit echter Fahrzeit statt Luftlinie. Die bekanntesten Ziele reichern wir mit Wikipedia-Wissen und Foto an.",
+  sources: [
+    "FOSSGIS-Valhalla — Erreichbarkeits-Fläche (Isochrone) + echte Fahrzeit/-distanz je Ziel (Matrix)",
+    "OpenStreetMap (Overpass API) — touristische Ziele innerhalb der Erreichbarkeits-Fläche",
+    "Wikipedia — Kurzbeschreibung + freies Foto + Quell-Link, sofern verknüpft",
+  ],
+  steps: [
+    "Wir berechnen die Fläche, die du im gewählten Modus/Zeitbudget erreichst.",
+    "Darin suchen wir touristische Ziele aus OpenStreetMap und priorisieren bekannte (Wikipedia-belegte).",
+    "Für jedes Ziel berechnen wir die echte Fahrzeit; die Top-Ziele bekommen Foto + Kurztext.",
+    "Über die Deep-Links kommst du direkt zur Navigation (Google Maps / Komoot).",
+  ],
+  limits: [
+    "Fahrzeiten sind Router-Schätzungen (ohne Live-Verkehr).",
+    "Nur in OpenStreetMap erfasste Ziele erscheinen; Fotos gibt es nur, wo eine offene Quelle verknüpft ist.",
+  ],
 };
 
 export default function AusflugsRadar() {
@@ -79,6 +101,27 @@ export default function AusflugsRadar() {
   );
 
   const poiColors = Object.fromEntries(Object.entries(CAT_META).map(([k, v]) => [k, v.color]));
+
+  const richPois = useMemo<RichPoi[]>(
+    () =>
+      shownPois.map((p) => ({
+        id: p.id,
+        name: p.name,
+        lat: p.lat,
+        lng: p.lng,
+        emoji: CAT_META[p.cat]?.emoji ?? "📍",
+        color: CAT_META[p.cat]?.color ?? "#0ea5e9",
+        category_label: CAT_META[p.cat]?.label ?? p.cat,
+        meta_right: p.travel_minutes != null ? `${p.travel_minutes} Min` : p.distance_km != null ? `${p.distance_km} km` : "",
+        description: p.description,
+        image: p.image,
+        wiki_url: p.wiki_url,
+        website: p.website,
+        wheelchair: p.wheelchair,
+        fee: p.fee,
+      })),
+    [shownPois]
+  );
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
@@ -184,15 +227,18 @@ export default function AusflugsRadar() {
             heightClass="h-[460px]"
           />
 
-          <PoiList
-            items={shownPois.map((p) => ({
-              id: p.id,
-              name: `${CAT_META[p.cat]?.emoji ?? "📍"} ${p.name}`,
-              sub: p.distance_km != null ? `${p.distance_km} km` : undefined,
-              right: p.travel_minutes != null ? `${p.travel_minutes} Min` : "—",
-            }))}
-            emptyText="Keine Ziele in dieser Kategorie."
-          />
+          {richPois.length > 0 ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {richPois.map((p) => (
+                <PoiCard key={p.id} poi={p} origin={result.center} />
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-500">Keine Ziele in dieser Kategorie.</p>
+          )}
+
+          <MethodBox content={METHOD} />
+          <AboutSection mailSubject="Ausflugs-Radar für unsere Region" />
         </section>
       )}
     </main>

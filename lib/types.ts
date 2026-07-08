@@ -48,7 +48,7 @@ export type LageCheckResult = {
 
 export type RadarMode = "foot-walking" | "cycling-regular" | "driving-car";
 
-export type RadarPoi = {
+export type RadarPoi = EnrichFields & {
   id: string;
   name: string;
   cat: string;
@@ -110,4 +110,38 @@ export type GeocodeHit = {
   label: string;
   lat: number;
   lng: number;
+};
+
+// --- v2-Anreicherung (gemeinsam mit dmo-tools) ------------------------------
+export type Species = { name_de: string; name_sci?: string | null; count: number };
+
+export type EnrichFields = {
+  id?: string;
+  description?: string | null; // Wikipedia-Kurztext
+  ai_why?: string | null; // KI-Einordnung
+  image?: string | null; // freies Bild (Wikipedia/Commons)
+  wiki_url?: string | null; // Quelle
+  open_now?: boolean | null;
+  opening_hours?: string | null;
+  website?: string | null;
+  phone?: string | null;
+  wheelchair?: string | null;
+  cuisine?: string | null;
+  fee?: string | null;
+};
+
+// Reiche Ergebnis-Karte (PoiCard)
+export type RichPoi = EnrichFields & {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  cat?: string;
+  category_label?: string;
+  emoji?: string;
+  color?: string;
+  distance_km?: number | null;
+  meta_right?: string | null;
+  badges?: string[];
+  species?: Species[];
 };

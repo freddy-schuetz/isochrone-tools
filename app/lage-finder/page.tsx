@@ -4,10 +4,31 @@ import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
 import ModeTimePicker from "@/components/ModeTimePicker";
+import MethodBox, { type MethodContent } from "@/components/MethodBox";
+import AboutSection from "@/components/AboutSection";
 import { usePolling } from "@/lib/usePolling";
 import { intersectAll, simplifyFeature, unionAll } from "@/lib/geo";
 import type { Feature, FinderResult, GeocodeHit } from "@/lib/types";
 import type { ZoneLayer } from "@/components/IsoMap";
+
+const METHOD: MethodContent = {
+  intro:
+    "Der Finder zeigt die „goldene Zone\" — den Bereich eines Orts, von dem aus ALLE deine gewählten Kriterien in der gewünschten Gehzeit erreichbar sind.",
+  sources: [
+    "FOSSGIS-Valhalla — Gehzeit-Zonen (Isochronen) je Kriterium auf dem OpenStreetMap-Wegenetz",
+    "OpenStreetMap (Overpass API) — die Orte je Kriterium (Strand, Bahnhof, Gastro, Supermarkt, Spielplatz, Apotheke)",
+  ],
+  steps: [
+    "Für jedes Kriterium suchen wir die passenden Orte und berechnen ihre Gehzeit-Zonen.",
+    "Je Kriterium vereinigen wir alle Zonen zu einer Fläche.",
+    "Der Schnitt aller Kriterien-Flächen ist die goldene Zone.",
+    "Existiert sie, ist von dort aus wirklich alles zu Fuß erreichbar.",
+  ],
+  limits: [
+    "Gibt es keine goldene Zone, liegen die Kriterien zu weit auseinander — weniger Kriterien oder mehr Gehzeit wählen.",
+    "Nur in OpenStreetMap erfasste Orte fließen ein; die Zonen sind Router-Näherungen.",
+  ],
+};
 
 const CRITERIA = [
   { key: "strand", label: "Strand", emoji: "🏖️" },
@@ -209,6 +230,33 @@ export default function LageFinder() {
               </ul>
             </div>
           )}
+
+          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+            <h2 className="mb-3 text-lg font-bold text-brand">Gefundene Orte je Kriterium</h2>
+            <ul className="space-y-3">
+              {result.categories.map((c, i) => {
+                const meta = CRITERIA.find((cr) => cr.key === c.key);
+                return (
+                  <li key={c.key}>
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <span aria-hidden className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: CAT_COLORS[i % CAT_COLORS.length] }} />
+                      {meta?.emoji} {c.label}
+                      <span className="ml-1 font-normal text-slate-500">· {c.pois.length} in der Nähe</span>
+                    </div>
+                    {c.pois.length > 0 && (
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {c.pois.slice(0, 6).map((p) => p.name).filter(Boolean).join(" · ") || "(ohne Namen erfasst)"}
+                        {c.pois.length > 6 ? " …" : ""}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          <MethodBox content={METHOD} />
+          <AboutSection mailSubject="Perfekte-Lage-Finder für unsere Region" />
         </section>
       )}
     </main>

@@ -8,3 +8,5 @@ next-env.d.ts
 # Session-Artefakte (n8n-Backup-Hook / Build-Logs), gehoeren nicht ins Frontend-Repo
 backup/
 development/
+
+.vercel

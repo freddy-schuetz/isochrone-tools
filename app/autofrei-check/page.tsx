@@ -3,9 +3,36 @@
 import { useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
-import ScoreGauge from "@/components/ScoreGauge";
+import AuditScore from "@/components/AuditScore";
+import Card from "@/components/Card";
+import MethodBox, { type MethodContent } from "@/components/MethodBox";
+import AboutSection from "@/components/AboutSection";
 import { usePolling } from "@/lib/usePolling";
 import type { AutofreiResult, FeatureCollection, GeocodeHit } from "@/lib/types";
+
+const METHOD: MethodContent = {
+  intro:
+    "Der Autofrei-Check bewertet, wie gut dein Betrieb ohne eigenes Auto erreichbar ist — von der Fernanreise per Bahn/Bus bis zur letzten Meile vor Ort.",
+  sources: [
+    "Transitous (MOTIS) — reale ÖPNV-Verbindungen aus den gewählten Städten (Samstag, Ankunft ~10 Uhr)",
+    "OpenStreetMap — nächster Bahnhof, nächste Haltestelle, Fußweg-Distanzen",
+    "FOSSGIS-Valhalla — Fußweg-Zeiten zur letzten Meile",
+  ],
+  steps: [
+    "Wir suchen den nächsten Bahnhof und die nächste ÖPNV-Haltestelle zum Betrieb.",
+    "Für 1–3 Quellstädte prüfen wir echte Bahn-/Bus-Verbindungen (Dauer, Umstiege).",
+    "Wir bewerten Anreise, letzte Meile und Taktung am Halt.",
+    "Daraus entsteht ein Autofrei-Score mit konkreten Empfehlungen.",
+  ],
+  scoring: [
+    "Anreise (Bahn/Bus) 50 · Letzte Meile 30 · Taktung am Halt 20 Punkte (max. 100).",
+    "Score ≥ 70 = sehr gut autofrei erreichbar · 40–69 = mit Einschränkungen · < 40 = schwierig.",
+  ],
+  limits: [
+    "ÖPNV-Verbindungen sind ein Stichtag-Beispiel (Samstag ~10 Uhr) — reale Fahrpläne variieren.",
+    "Nur in OSM/Transitous erfasste Halte und Linien fließen ein.",
+  ],
+};
 
 const CITIES = [
   { key: "berlin", label: "Berlin" },
@@ -144,17 +171,20 @@ export default function AutofreiCheck() {
 
       {status === "done" && result && (
         <section className="space-y-5">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ScoreGauge value={result.score.total} title={`Autofrei-Score · ${result.address_resolved}`} />
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-              <p className="mb-2 text-sm font-medium text-slate-500">Zusammensetzung</p>
-              <ul className="space-y-1.5 text-sm">
-                <li className="flex justify-between"><span>Anreise (Bahn/Bus)</span><span className="font-semibold">{result.score.parts.anreise} / 50</span></li>
-                <li className="flex justify-between"><span>Letzte Meile</span><span className="font-semibold">{result.score.parts.letzte_meile} / 30</span></li>
-                <li className="flex justify-between"><span>Taktung am Halt</span><span className="font-semibold">{result.score.parts.taktung} / 20</span></li>
-              </ul>
-            </div>
-          </div>
+          <AuditScore
+            score={result.score.total}
+            title={`Autofrei-Score · ${result.address_resolved}`}
+            subtitle="Erreichbarkeit ohne eigenes Auto"
+            labels={{ good: "Sehr gut autofrei erreichbar", mid: "Mit Einschränkungen", bad: "Schwierig ohne Auto" }}
+          />
+          <Card>
+            <p className="mb-2 text-sm font-medium text-slate-500">Zusammensetzung</p>
+            <ul className="space-y-1.5 text-sm">
+              <li className="flex justify-between"><span>Anreise (Bahn/Bus)</span><span className="font-semibold">{result.score.parts.anreise} / 50</span></li>
+              <li className="flex justify-between"><span>Letzte Meile</span><span className="font-semibold">{result.score.parts.letzte_meile} / 30</span></li>
+              <li className="flex justify-between"><span>Taktung am Halt</span><span className="font-semibold">{result.score.parts.taktung} / 20</span></li>
+            </ul>
+          </Card>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -231,6 +261,9 @@ export default function AutofreiCheck() {
               </ul>
             </div>
           )}
+
+          <MethodBox content={METHOD} />
+          <AboutSection mailSubject="Autofrei-Check für meinen Betrieb" />
         </section>
       )}
     </main>

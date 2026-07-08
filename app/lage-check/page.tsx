@@ -3,9 +3,35 @@
 import { useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
-import ScoreGauge from "@/components/ScoreGauge";
+import AuditScore from "@/components/AuditScore";
+import Card from "@/components/Card";
+import MethodBox, { type MethodContent } from "@/components/MethodBox";
+import AboutSection from "@/components/AboutSection";
 import { usePolling } from "@/lib/usePolling";
 import type { Feature, GeocodeHit, IsoProps, LageCheckResult } from "@/lib/types";
+
+const METHOD: MethodContent = {
+  intro:
+    "Der Lage-Check bewertet, wie viel deine Gäste zu Fuß erreichen — auf Basis echter Gehzeit-Zonen (Isochronen), nicht der Luftlinie.",
+  sources: [
+    "FOSSGIS-Valhalla — Gehzeit-Zonen (5/10/15 Min) auf dem OpenStreetMap-Wegenetz",
+    "OpenStreetMap (Overpass API) — Gastronomie, ÖPNV, Nahversorgung, Sehenswürdigkeiten, Familienangebote in den Zonen",
+  ],
+  steps: [
+    "Wir berechnen die 5-, 10- und 15-Gehminuten-Zonen rund um die Adresse.",
+    "In den Zonen zählen wir die relevanten Orte je Kategorie aus OpenStreetMap.",
+    "Nähe wird gewichtet: Funde in 5 Minuten zählen dreifach, in 10 Min doppelt, in 15 Min einfach.",
+    "Jede Kategorie ist gedeckelt, damit Großstadtlagen kleine Orte nicht automatisch übertrumpfen.",
+  ],
+  scoring: [
+    "Gastronomie 25 · ÖPNV 20 · Nahversorgung 20 · Sehenswürdigkeiten 20 · Familie 15 Punkte (max. 100).",
+    "Score ≥ 70 = sehr gute Lage · 40–69 = solide · < 40 = eher abgelegen.",
+  ],
+  limits: [
+    "Bewertet wird die fußläufige Erreichbarkeit laut OSM — Qualität/Öffnung der Orte fließt nicht ein.",
+    "Sehr kleine oder neue Orte fehlen evtl. in OpenStreetMap.",
+  ],
+};
 
 const POI_COLORS: Record<string, string> = {
   gastro: "#e11d48",
@@ -133,20 +159,23 @@ export default function LageCheck() {
 
       {status === "done" && result && (
         <section className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ScoreGauge value={result.score.total} title={`Lage-Score · ${result.address_resolved}`} />
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-              <p className="mb-2 text-sm font-medium text-slate-500">Auf einen Blick</p>
-              <ul className="space-y-1.5 text-sm">
-                {result.highlights.map((h, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span aria-hidden>✦</span>
-                    <span>{h}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+          <AuditScore
+            score={result.score.total}
+            title={`Lage-Score · ${result.address_resolved}`}
+            subtitle="Fußläufige Erreichbarkeit (5–15 Gehminuten)"
+            labels={{ good: "Sehr gute Lage", mid: "Solide Lage", bad: "Eher abgelegen" }}
+          />
+          <Card>
+            <p className="mb-2 text-sm font-medium text-slate-500">Auf einen Blick</p>
+            <ul className="space-y-1.5 text-sm">
+              {result.highlights.map((h, i) => (
+                <li key={i} className="flex gap-2">
+                  <span aria-hidden>✦</span>
+                  <span>{h}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
 
           <IsoMapDynamic
             center={[result.center.lng, result.center.lat]}
@@ -245,19 +274,11 @@ export default function LageCheck() {
               </p>
             )}
           </div>
+
+          <MethodBox content={METHOD} />
+          <AboutSection mailSubject="Lage-Check für meinen Betrieb" />
         </section>
       )}
-
-      <section className="mt-10 rounded-2xl bg-white p-6 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">
-        <h2 className="mb-2 font-bold text-brand">So funktioniert der Check</h2>
-        <p>
-          Die Gehzeit-Zonen (Isochronen) werden mit dem Open-Source-Router Valhalla auf
-          OpenStreetMap-Wegenetzen berechnet — keine Luftlinien, sondern echte Fußwege. Die Orte in
-          den Zonen stammen ebenfalls aus OpenStreetMap. Der Score gewichtet Nähe (5-Minuten-Funde
-          zählen dreifach) und deckelt jede Kategorie, damit Großstadtlagen kleine Orte nicht
-          automatisch übertrumpfen.
-        </p>
-      </section>
     </main>
   );
 }
