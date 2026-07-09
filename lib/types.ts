@@ -143,6 +143,7 @@ export type RichPoi = EnrichFields & {
   color?: string;
   distance_km?: number | null;
   meta_right?: string | null;
-  badges?: string[];
+  badges?: string[]; // grün
+  notes?: string[]; // amber (Hinweise)
   species?: Species[];
 };

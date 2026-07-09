@@ -69,7 +69,7 @@ export default function PoiCard({
           </span>
         </div>
 
-        {(poi.category_label || poi.badges?.length) && (
+        {(poi.category_label || poi.badges?.length || poi.notes?.length) && (
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {poi.category_label && (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
@@ -79,6 +79,11 @@ export default function PoiCard({
             {poi.badges?.map((b) => (
               <span key={b} className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-ok">
                 {b}
+              </span>
+            ))}
+            {poi.notes?.map((n) => (
+              <span key={n} className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
+                {n}
               </span>
             ))}
           </div>
