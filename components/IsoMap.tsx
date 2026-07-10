@@ -42,11 +42,14 @@ export type LineLayer = {
 };
 
 // Raster-Overlay (z. B. Regenradar RainViewer). tiles = XYZ-URL-Template(s).
+// maxzoom: nativer Max-Zoom der Kachelquelle — darüber streckt MapLibre die Kacheln
+// (RainViewer liefert nur bis z=7, sonst "Zoom Level not supported"-Kacheln!).
 export type RasterLayer = {
   id: string;
   tiles: string[];
   opacity?: number;
   tileSize?: number;
+  maxzoom?: number;
 };
 
 // Eingefärbte Heat-Fläche (z. B. Lade-Lücken): Polygone, Farbe interpoliert über eine Property.
@@ -285,7 +288,10 @@ export default function IsoMap({
     }
     rasterIdsRef.current = [];
     for (const r of rasterRef.current) {
-      map.addSource(`rastersrc-${r.id}`, { type: "raster", tiles: r.tiles, tileSize: r.tileSize ?? 256 });
+      map.addSource(`rastersrc-${r.id}`, {
+        type: "raster", tiles: r.tiles, tileSize: r.tileSize ?? 256,
+        ...(r.maxzoom != null ? { maxzoom: r.maxzoom } : {}),
+      });
       map.addLayer(
         { id: `raster-${r.id}`, type: "raster", source: `rastersrc-${r.id}`, paint: { "raster-opacity": r.opacity ?? 0.7 } },
         map.getLayer("pois-circles") ? "pois-circles" : undefined
