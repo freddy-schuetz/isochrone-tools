@@ -36,6 +36,19 @@ export type CategoryScore = {
   places?: { name: string; band: number }[]; // konkrete Ortsnamen für die Detail-Ansicht
 };
 
+// v4: Zielgruppen-Profil (gleiche Datenbasis, andere Gewichtung)
+export type LageProfile = { key: string; label: string; emoji: string; total: number };
+
+// v4: Ruhe-Faktor (Distanz-Heuristik zur nächsten Hauptverkehrsader, KEINE dB-Aussage)
+export type NoiseInfo = { dist_m: number | null; level: string; label: string };
+
+// v4: ÖPNV-Live-Abfahrten (Transitous/MOTIS)
+export type Departures = {
+  stop_name: string;
+  dist_m: number;
+  list: { time: string; line: string; dest: string }[];
+};
+
 export type LageCheckResult = {
   address_resolved: string;
   center: LngLat;
@@ -43,6 +56,9 @@ export type LageCheckResult = {
   pois: FeatureCollection<PoiProps>;
   score: { total: number; categories: CategoryScore[] };
   highlights: string[];
+  profiles?: LageProfile[];
+  noise?: NoiseInfo | null;
+  departures?: Departures | null;
 };
 
 // --- UC2 Ausflugs-Radar -----------------------------------------------------
@@ -58,6 +74,20 @@ export type RadarPoi = EnrichFields & {
   travel_minutes: number | null;
   distance_km: number | null;
   website: string | null;
+  // v4: ÖPNV-Anbindung (Transitous), Wikipedia-Aufrufe/Monat, Indoor-Einstufung
+  transit_minutes?: number | null;
+  transit_transfers?: number | null;
+  transit_legs?: string | null;
+  views_month?: number | null;
+  indoor?: boolean;
+};
+
+// v4: Wetter heute (Open-Meteo) für Wetter-Fit-Badges
+export type RadarWeather = {
+  temp_max: number | null;
+  rain_prob: number | null;
+  rainy: boolean;
+  summary: string;
 };
 
 export type RadarResult = {
@@ -65,6 +95,8 @@ export type RadarResult = {
   mode: RadarMode;
   minutes: number;
   isochrone: Feature<{ mode: string; minutes: number }>;
+  weather?: RadarWeather | null;
+  day_plan?: string | null;
   pois: RadarPoi[];
 };
 
@@ -77,12 +109,16 @@ export type FinderCategory = {
   isochrones: FeatureCollection<{ category: string }>;
 };
 
+// v4: Unterkünfte im Umkreis — das Frontend filtert sie per Punkt-in-Polygon in die goldene Zone
+export type FinderUnterkunft = { name: string; lat: number; lng: number; typ: string };
+
 export type FinderResult = {
   center: LngLat;
   ort_resolved: string;
   walkMinutes: number;
   categories: FinderCategory[];
   warnings: string[];
+  unterkuenfte?: FinderUnterkunft[];
 };
 
 // --- UC4 Autofrei-Check -----------------------------------------------------

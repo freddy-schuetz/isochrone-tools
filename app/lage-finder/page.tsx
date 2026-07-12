@@ -1,14 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
 import ModeTimePicker from "@/components/ModeTimePicker";
 import MethodBox, { type MethodContent } from "@/components/MethodBox";
 import AboutSection from "@/components/AboutSection";
 import { usePolling } from "@/lib/usePolling";
-import { intersectAll, simplifyFeature, unionAll } from "@/lib/geo";
-import type { Feature, FinderResult, GeocodeHit } from "@/lib/types";
+import { areaKm2, intersectAll, pointInPoly, roughCentroid, simplifyFeature, unionAll } from "@/lib/geo";
+import type { Feature, FeatureCollection, FinderResult, FinderUnterkunft, GeocodeHit } from "@/lib/types";
 import type { ZoneLayer } from "@/components/IsoMap";
 
 const METHOD: MethodContent = {
@@ -21,12 +21,14 @@ const METHOD: MethodContent = {
   steps: [
     "Für jedes Kriterium suchen wir die passenden Orte und berechnen ihre Gehzeit-Zonen.",
     "Je Kriterium vereinigen wir alle Zonen zu einer Fläche.",
-    "Der Schnitt aller Kriterien-Flächen ist die goldene Zone.",
-    "Existiert sie, ist von dort aus wirklich alles zu Fuß erreichbar.",
+    "Der Schnitt aller Kriterien-Flächen ist die goldene Zone — mit Größe und Lage-Beschreibung.",
+    "Echte Unterkünfte aus OpenStreetMap, die IN der Zone liegen, listen wir direkt auf.",
+    "Gibt es keine Zone, prüfen wir automatisch, welches Kriterium sie verhindert.",
   ],
   limits: [
     "Gibt es keine goldene Zone, liegen die Kriterien zu weit auseinander — weniger Kriterien oder mehr Gehzeit wählen.",
-    "Nur in OpenStreetMap erfasste Orte fließen ein; die Zonen sind Router-Näherungen.",
+    "„Wander-Einstieg\" nutzt Wanderwegweiser (guideposts) als Näherung für Wegzugänge.",
+    "Nur in OpenStreetMap erfasste Orte und Unterkünfte fließen ein; die Zonen sind Router-Näherungen.",
   ],
 };
 
@@ -37,8 +39,12 @@ const CRITERIA = [
   { key: "supermarkt", label: "Supermarkt", emoji: "🛒" },
   { key: "spielplatz", label: "Spielplatz", emoji: "🧒" },
   { key: "apotheke", label: "Apotheke", emoji: "💊" },
+  { key: "baeckerei", label: "Bäckerei", emoji: "🥐" },
+  { key: "bademoeglichkeit", label: "Bademöglichkeit", emoji: "🏊" },
+  { key: "wanderweg", label: "Wander-Einstieg", emoji: "🥾" },
+  { key: "ladesaeule", label: "E-Ladesäule", emoji: "⚡" },
 ];
-const CAT_COLORS = ["#e11d48", "#2563eb", "#16a34a", "#9333ea", "#f59e0b", "#0891b2"];
+const CAT_COLORS = ["#e11d48", "#2563eb", "#16a34a", "#9333ea", "#f59e0b", "#0891b2", "#db2777", "#0d9488", "#65a30d", "#7c3aed"];
 
 export default function LageFinder() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
@@ -83,9 +89,12 @@ export default function LageFinder() {
     }
   }
 
-  // turf: Union je Kategorie, dann Schnitt über alle -> "goldene Zone"
-  const { zones, goldenExists, categoryOrder } = useMemo(() => {
-    if (!result) return { zones: [] as ZoneLayer[], goldenExists: false, categoryOrder: [] as string[] };
+  // turf: Union je Kategorie, dann Schnitt über alle -> "goldene Zone".
+  // Dazu (v4): Fläche + Schwerpunkt, Unterkünfte in der Zone (Punkt-in-Polygon),
+  // und bei leerem Schnitt die Blocker-Analyse (welches Kriterium verhindert die Zone?).
+  const { zones, goldenExists, categoryOrder, goldenKm2, goldenCenter, inZone, blockers } = useMemo(() => {
+    if (!result)
+      return { zones: [] as ZoneLayer[], goldenExists: false, categoryOrder: [] as string[], goldenKm2: 0, goldenCenter: null as { lat: number; lng: number } | null, inZone: [] as FinderUnterkunft[], blockers: [] as string[] };
     const perCat = result.categories.map((c) => unionAll(c.isochrones));
     const golden = intersectAll(perCat);
     const z: ZoneLayer[] = [];
@@ -93,11 +102,56 @@ export default function LageFinder() {
       const u = perCat[i];
       if (u) z.push({ id: `cat-${c.key}`, data: u as Feature, color: CAT_COLORS[i % CAT_COLORS.length], fillOpacity: 0.08 });
     });
+    let km2 = 0, centroid: { lat: number; lng: number } | null = null;
+    const inZ: FinderUnterkunft[] = [];
+    const blk: string[] = [];
     if (golden) {
       z.push({ id: "golden", data: simplifyFeature(golden), color: "#eab308", fillOpacity: 0.55 });
+      km2 = areaKm2(golden);
+      centroid = roughCentroid(golden);
+      for (const u of result.unterkuenfte ?? []) {
+        if (pointInPoly(u.lng, u.lat, golden)) inZ.push(u);
+      }
+    } else if (result.categories.length >= 3) {
+      // Leave-one-out: gäbe es OHNE Kriterium i eine gemeinsame Zone?
+      result.categories.forEach((c, i) => {
+        const rest = perCat.filter((_, j) => j !== i);
+        if (intersectAll(rest)) blk.push(c.label);
+      });
     }
-    return { zones: z, goldenExists: !!golden, categoryOrder: result.categories.map((c) => c.key) };
+    return { zones: z, goldenExists: !!golden, categoryOrder: result.categories.map((c) => c.key), goldenKm2: km2, goldenCenter: centroid, inZone: inZ, blockers: blk };
   }, [result]);
+
+  // Zone konkret benennen: Reverse-Geocoding des Zonen-Schwerpunkts (Nominatim, 1 Call)
+  const [zoneName, setZoneName] = useState<string | null>(null);
+  useEffect(() => {
+    setZoneName(null);
+    if (!goldenCenter) return;
+    let cancelled = false;
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${goldenCenter.lat}&lon=${goldenCenter.lng}&format=jsonv2&zoom=16&accept-language=de`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d?.address) return;
+        const a = d.address as Record<string, string>;
+        const parts = [a.road, a.suburb || a.neighbourhood || a.hamlet || a.village || a.town || a.city].filter(Boolean);
+        if (parts.length) setZoneName(parts.join(", "));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [goldenCenter]);
+
+  // Unterkünfte in der Zone als goldene Karten-Punkte
+  const zonePois = useMemo<FeatureCollection | null>(() => {
+    if (!inZone.length) return null;
+    return {
+      type: "FeatureCollection",
+      features: inZone.map((u, i) => ({
+        type: "Feature",
+        properties: { id: `uz-${i}`, cat: "unterkunft", name: u.name, emoji: "🏠", category_label: u.typ },
+        geometry: { type: "Point", coordinates: [u.lng, u.lat] },
+      })),
+    };
+  }, [inZone]);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
@@ -177,24 +231,67 @@ export default function LageFinder() {
             }`}
           >
             {goldenExists ? (
-              <p className="font-semibold text-amber-700">
-                ✨ Es gibt eine goldene Zone! Von dem gelben Bereich aus erreichst du alle{" "}
-                {result.categories.length} Kriterien in höchstens {result.walkMinutes} Gehminuten.
-              </p>
+              <>
+                <p className="font-semibold text-amber-700">
+                  ✨ Es gibt eine goldene Zone! Von dem gelben Bereich aus erreichst du alle{" "}
+                  {result.categories.length} Kriterien in höchstens {result.walkMinutes} Gehminuten.
+                </p>
+                <p className="mt-1 text-sm text-amber-800">
+                  {goldenKm2 >= 0.05 && <>≈ {goldenKm2 < 10 ? goldenKm2.toFixed(1).replace(".", ",") : Math.round(goldenKm2)} km²</>}
+                  {zoneName && <> · rund um {zoneName}</>}
+                  {inZone.length > 0 && (
+                    <>
+                      {" "}· <strong>{inZone.length} {inZone.length === 1 ? "Unterkunft liegt" : "Unterkünfte liegen"} bereits darin</strong>
+                    </>
+                  )}
+                </p>
+              </>
             ) : (
-              <p className="text-slate-600">
-                Keine gemeinsame Zone gefunden, in der <em>alle</em> Kriterien in {result.walkMinutes}{" "}
-                Minuten erreichbar sind. Tipp: weniger Kriterien wählen oder die Gehzeit erhöhen.
-              </p>
+              <>
+                <p className="text-slate-600">
+                  Keine gemeinsame Zone gefunden, in der <em>alle</em> Kriterien in {result.walkMinutes}{" "}
+                  Minuten erreichbar sind.
+                </p>
+                {blockers.length > 0 ? (
+                  <p className="mt-1 text-sm font-medium text-slate-700">
+                    🔍 Blocker-Analyse: Ohne {blockers.map((b) => `„${b}“`).join(" bzw. ohne ")} gäbe es eine goldene Zone —
+                    dieses Kriterium liegt zu weit von den anderen entfernt.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-sm text-slate-500">Tipp: weniger Kriterien wählen oder die Gehzeit erhöhen.</p>
+                )}
+              </>
             )}
           </div>
 
           <IsoMapDynamic
             center={[result.center.lng, result.center.lat]}
             zones={zones}
+            pois={zonePois}
+            poiColors={{ unterkunft: "#b45309" }}
             markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
             heightClass="h-[480px]"
           />
+
+          {inZone.length > 0 && (
+            <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-amber-200">
+              <h2 className="mb-1 text-lg font-bold text-brand">🏠 Unterkünfte in der goldenen Zone</h2>
+              <p className="mb-3 text-xs text-slate-500">
+                Diese in OpenStreetMap erfassten Unterkünfte liegen im gelben Bereich — von dort ist alles Gewählte zu Fuß erreichbar.
+              </p>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {inZone.slice(0, 10).map((u, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2 rounded-lg bg-amber-50/60 px-3 py-2 text-sm ring-1 ring-amber-100">
+                    <span className="truncate font-medium">{u.name}</span>
+                    <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500 ring-1 ring-slate-200">{u.typ}</span>
+                  </li>
+                ))}
+              </ul>
+              {inZone.length > 10 && (
+                <p className="mt-2 text-xs text-slate-400">+ {inZone.length - 10} weitere auf der Karte (🏠-Punkte)</p>
+              )}
+            </div>
+          )}
 
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <p className="mb-3 text-sm font-medium text-slate-500">Legende</p>

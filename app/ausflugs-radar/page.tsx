@@ -28,17 +28,19 @@ const METHOD: MethodContent = {
   sources: [
     "FOSSGIS-Valhalla — Erreichbarkeits-Fläche (Isochrone) + echte Fahrzeit/-distanz je Ziel (Matrix)",
     "OpenStreetMap (Overpass API) — touristische Ziele innerhalb der Erreichbarkeits-Fläche",
-    "Wikipedia — Kurzbeschreibung + freies Foto + Quell-Link, sofern verknüpft",
+    "Wikipedia — Kurzbeschreibung, Foto + echte Artikel-Aufrufe/Monat (Publikumsmagnet vs. Geheimtipp)",
+    "Transitous (MOTIS) — Bus/Bahn-Verbindung zu den Top-Zielen · Open-Meteo — Wetter heute",
   ],
   steps: [
     "Wir berechnen die Fläche, die du im gewählten Modus/Zeitbudget erreichst.",
     "Darin suchen wir touristische Ziele aus OpenStreetMap und priorisieren bekannte (Wikipedia-belegte).",
-    "Für jedes Ziel berechnen wir die echte Fahrzeit; die Top-Ziele bekommen Foto + Kurztext.",
-    "Über die Deep-Links kommst du direkt zur Navigation (Google Maps / Komoot).",
+    "Für jedes Ziel berechnen wir die echte Fahrzeit; die Top-Ziele bekommen Foto, Kurztext, ÖPNV-Verbindung und Aufrufzahlen.",
+    "Aus Wetter + Indoor/Outdoor-Einstufung entsteht das „passt heute\"-Signal; eine KI kombiniert 2–3 Ziele zum Tagesausflug.",
   ],
   limits: [
-    "Fahrzeiten sind Router-Schätzungen (ohne Live-Verkehr).",
-    "Nur in OpenStreetMap erfasste Ziele erscheinen; Fotos gibt es nur, wo eine offene Quelle verknüpft ist.",
+    "Fahrzeiten sind Router-Schätzungen (ohne Live-Verkehr); ÖPNV-Zeiten kommen aus offenen Fahrplandaten (Transitous, Fair-Use) — ohne Gewähr.",
+    "Indoor/Outdoor ist eine grobe Kategorie-Heuristik; der KI-Tagesplan nutzt nur die gefundenen Ziele, bleibt aber ein Vorschlag.",
+    "Nur in OpenStreetMap erfasste Ziele erscheinen; Fotos/Aufrufe gibt es nur, wo eine offene Quelle verknüpft ist.",
   ],
 };
 
@@ -50,6 +52,7 @@ export default function AusflugsRadar() {
   const [startError, setStartError] = useState<string | null>(null);
   const [activeCats, setActiveCats] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [fitOnly, setFitOnly] = useState(false);
   const { status, result, errorMessage } = usePolling<RadarResult>(token);
 
   async function submit(e: React.FormEvent) {
@@ -85,9 +88,35 @@ export default function AusflugsRadar() {
 
   const shownPois = useMemo(() => {
     if (!result) return [];
-    if (activeCats.length === 0) return result.pois;
-    return result.pois.filter((p) => activeCats.includes(p.cat));
-  }, [result, activeCats]);
+    let list = result.pois;
+    if (activeCats.length > 0) list = list.filter((p) => activeCats.includes(p.cat));
+    // "passt heute": bei Regen nur Indoor-Ziele
+    if (fitOnly && result.weather?.rainy) list = list.filter((p) => p.indoor);
+    return list;
+  }, [result, activeCats, fitOnly]);
+
+  // Badge-Zeilen je Ziel: ÖPNV, Beliebtheit (echte Wikipedia-Aufrufe), Wetter-Fit
+  function poiBadges(p: RadarResult["pois"][number]): { badges: string[]; notes: string[] } {
+    const badges: string[] = [];
+    const notes: string[] = [];
+    if (p.transit_minutes != null) {
+      const um = p.transit_transfers != null && p.transit_transfers > 0
+        ? `${p.transit_transfers} Umstieg${p.transit_transfers > 1 ? "e" : ""}`
+        : "direkt";
+      badges.push(`🚌 ${p.transit_minutes} Min · ${um}${p.transit_legs ? ` (${p.transit_legs})` : ""}`);
+    }
+    if (p.views_month != null) {
+      if (p.views_month >= 10000) badges.push(`⭐ Publikumsmagnet · ${p.views_month.toLocaleString("de-DE")} Wiki-Aufrufe/Monat`);
+      else if (p.views_month < 300) badges.push("💎 eher Geheimtipp");
+    }
+    const w = result?.weather;
+    if (w) {
+      if (w.rainy && p.indoor) badges.push("☔ passt heute");
+      else if (!w.rainy && !p.indoor) badges.push("☀️ passt heute");
+      else if (w.rainy && !p.indoor) notes.push("☀️ besser bei Sonne");
+    }
+    return { badges, notes };
+  }
 
   const origin = result?.center ?? null;
   const poisFc = useMemo<FeatureCollection>(
@@ -118,23 +147,29 @@ export default function AusflugsRadar() {
 
   const richPois = useMemo<RichPoi[]>(
     () =>
-      shownPois.map((p) => ({
-        id: p.id,
-        name: p.name,
-        lat: p.lat,
-        lng: p.lng,
-        emoji: CAT_META[p.cat]?.emoji ?? "📍",
-        color: CAT_META[p.cat]?.color ?? "#0ea5e9",
-        category_label: CAT_META[p.cat]?.label ?? p.cat,
-        meta_right: p.travel_minutes != null ? `${p.travel_minutes} Min` : p.distance_km != null ? `${p.distance_km} km` : "",
-        description: p.description,
-        image: p.image,
-        wiki_url: p.wiki_url,
-        website: p.website,
-        wheelchair: p.wheelchair,
-        fee: p.fee,
-      })),
-    [shownPois]
+      shownPois.map((p) => {
+        const { badges, notes } = poiBadges(p);
+        return {
+          id: p.id,
+          name: p.name,
+          lat: p.lat,
+          lng: p.lng,
+          emoji: CAT_META[p.cat]?.emoji ?? "📍",
+          color: CAT_META[p.cat]?.color ?? "#0ea5e9",
+          category_label: CAT_META[p.cat]?.label ?? p.cat,
+          meta_right: p.travel_minutes != null ? `${p.travel_minutes} Min` : p.distance_km != null ? `${p.distance_km} km` : "",
+          description: p.description,
+          image: p.image,
+          wiki_url: p.wiki_url,
+          website: p.website,
+          wheelchair: p.wheelchair,
+          fee: p.fee,
+          badges: badges.length ? badges : undefined,
+          notes: notes.length ? notes : undefined,
+        };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shownPois, result]
   );
 
   return (
@@ -195,10 +230,26 @@ export default function AusflugsRadar() {
       {status === "done" && result && (
         <section className="space-y-5">
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <p className="text-sm text-slate-600">
-              <strong>{result.pois.length}</strong> Ausflugsziele {MODE_LABEL[result.mode]} in{" "}
-              <strong>{result.minutes} Minuten</strong> erreichbar.
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-slate-600">
+                <strong>{result.pois.length}</strong> Ausflugsziele {MODE_LABEL[result.mode]} in{" "}
+                <strong>{result.minutes} Minuten</strong> erreichbar.
+              </p>
+              {result.weather && (
+                <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${result.weather.rainy ? "bg-blue-50 text-blue-700 ring-blue-200" : "bg-amber-50 text-amber-700 ring-amber-200"}`}>
+                  {result.weather.rainy ? "🌧️" : "☀️"} {result.weather.summary}
+                </span>
+              )}
+            </div>
+            {result.weather?.rainy && (
+              <button
+                type="button"
+                onClick={() => setFitOnly((v) => !v)}
+                className={`mt-3 rounded-full px-3 py-1 text-xs font-medium ring-1 transition ${fitOnly ? "bg-brand text-white ring-brand" : "bg-white text-slate-500 ring-slate-300"}`}
+              >
+                ☔ nur Ziele, die heute passen
+              </button>
+            )}
             {cats.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {cats.map((c) => {
@@ -224,6 +275,17 @@ export default function AusflugsRadar() {
               </div>
             )}
           </div>
+
+          {/* KI-Tagesausflug: 2–3 der gefundenen Ziele kombiniert */}
+          {result.day_plan && (
+            <div className="rounded-2xl bg-violet-50 p-5 ring-1 ring-violet-200">
+              <h2 className="mb-2 font-bold text-violet-800">🗓 Dein Tagesausflug-Vorschlag</h2>
+              <p className="text-sm text-violet-900">{result.day_plan}</p>
+              <p className="mt-2 text-xs text-violet-500">
+                KI-Vorschlag ausschließlich aus den unten gefundenen Zielen und Fahrzeiten — Öffnungszeiten vor Ort kurz gegenprüfen.
+              </p>
+            </div>
+          )}
 
           <IsoMapDynamic
             center={[result.center.lng, result.center.lat]}

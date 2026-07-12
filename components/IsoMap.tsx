@@ -118,6 +118,7 @@ function popupHtml(p: Record<string, unknown>): string {
   if (p.gmaps) links.push(`<a href="${esc(p.gmaps)}" target="_blank" rel="noopener" style="color:#0ea5e9;text-decoration:none">Google Maps ↗</a>`);
   if (p.komoot) links.push(`<a href="${esc(p.komoot)}" target="_blank" rel="noopener" style="color:#0ea5e9;text-decoration:none">Komoot ↗</a>`);
   if (p.website) links.push(`<a href="${esc(p.website)}" target="_blank" rel="noopener" style="color:#0ea5e9;text-decoration:none">Website ↗</a>`);
+  if (p.edit_url) links.push(`<a href="${esc(p.edit_url)}" target="_blank" rel="noopener" style="color:#7c3aed;text-decoration:none;font-weight:600">In OSM ergänzen ↗</a>`);
   if (links.length) parts.push(`<div style="font-size:12px;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">${links.join("")}</div>`);
   parts.push("</div>");
   return parts.join("");
